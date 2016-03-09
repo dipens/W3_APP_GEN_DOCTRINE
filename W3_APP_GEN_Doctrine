@@ -1,0 +1,98 @@
+/****** Object:  StoredProcedure [dbo].[W3_APP_GEN_Doctrine]    Script Date: 3/9/2016 3:12:02 PM ******/
+SET ANSI_NULLS ON
+GO
+SET QUOTED_IDENTIFIER ON
+GO
+
+
+ALTER PROCEDURE [dbo].[W3_APP_GEN_Doctrine] @tablename varchar(255)
+AS
+
+WITH D AS (
+select data_type + 
+    case
+        when data_type like '%text' or data_type like 'image' or data_type like 'sql_variant' or data_type like 'xml'
+            then ''
+        when data_type = 'float'
+            then '(' + convert(varchar(10), isnull(numeric_precision, 18)) + ')'
+        when data_type = 'numeric' or data_type = 'decimal'
+            then '(' + convert(varchar(10), isnull(numeric_precision, 18)) + ',' + convert(varchar(10), isnull(numeric_scale, 0)) + ')'
+        when (data_type like '%char' or data_type like '%binary') and character_maximum_length = -1
+            then '(max)'
+        when character_maximum_length is not null
+            then '(' + convert(varchar(10), character_maximum_length) + ')'
+        else ''
+    end as CONDENSED_TYPE
+    , 
+	
+	case 
+		when data_type like '%text%' or data_type like '%char%' OR data_type ='uniqueidentifier'  OR data_type ='bigint'
+			then 'string'
+		when data_type ='int' or data_type ='smallint' or data_type ='tinyint'
+			then 'integer'
+		when data_type ='date'
+			then 'datetime'
+		when data_type ='bit'
+			then 'boolean'
+		when data_type ='decimal' 
+			then 'string' --'decimal'
+		when data_type ='datetime'
+			then data_type
+		when data_type ='double' OR data_type ='float'
+			then 'float'
+		when data_type ='money'
+			then 'string' --'decimal'
+		when data_type ='bigint'
+			then 'string'
+	end as DoctrineType
+		
+	
+	,object_id(table_name) AS TID ,C.*, SC.is_computed, SC.is_identity
+from information_schema.columns C
+INNER JOIN sys.columns SC ON object_id(table_name)=SC.object_id and C.COLUMN_NAME=SC.name
+where table_name= @tablename
+
+)
+SELECT 
+'/**' 
++ CHAR(13)+CHAR(10) + '* @var ' + IIF(D.DoctrineType='datetime','\'+D.DoctrineType,D.DoctrineType)
++ CHAR(13)+CHAR(10) + '*'
++ CHAR(13)+CHAR(10) + '* @ORM\Column(name="' + D.COLUMN_NAME + '", type="' + D.DoctrineType + '"' 
+	+ IIF(D.DoctrineType='string' and D.DATA_TYPE NOT IN ('uniqueidentifier','decimal','money','bigint'),', length=' + convert(varchar(25),D.CHARACTER_MAXIMUM_LENGTH),'')
+	+ IIF(D.DoctrineType='decimal',', precision=' + convert(varchar(25),D.NUMERIC_PRECISION) + ', scale=' + convert(varchar(25),D.NUMERIC_SCALE),'')
+	+ IIF(D.IS_NULLABLE='NO' and D.is_identity=0,', nullable=false','')
+	+ ')'
++ IIF(D.is_identity=1,CHAR(13)+CHAR(10) + '* @ORM\Id','')
++ IIF(D.is_identity=1,CHAR(13)+CHAR(10) + '* @ORM\GeneratedValue(strategy="AUTO")','')
++ CHAR(13)+CHAR(10) + '*/'
++ CHAR(13)+CHAR(10)
++ CHAR(13)+CHAR(10) + 'private $' + D.COLUMN_NAME  +';'
++ CHAR(13)+CHAR(10)
+
+AS DOCTRINE
+--,D.ORDINAL_POSITION
+FROM D
+--ORDER BY D.ORDINAL_POSITION
+
+UNION ALL
+
+SELECT
+'/**' 
++ CHAR(13)+CHAR(10) + '* @return ' + IIF(D.DoctrineType='datetime','\'+D.DoctrineType,D.DoctrineType)
++ CHAR(13)+CHAR(10) + '*/'
++ CHAR(13)+CHAR(10) + 'public function get' + replace(D.COLUMN_NAME,'_','') +  '()'
++ CHAR(13)+CHAR(10) + '{'
++ CHAR(13)+CHAR(10) + '	return $this->' + D.COLUMN_NAME + ';'
++ CHAR(13)+CHAR(10) + '}'
++ CHAR(13)+CHAR(10)
++ CHAR(13)+CHAR(10)+ '/**' 
++ CHAR(13)+CHAR(10) + '* @param ' + IIF(D.DoctrineType='datetime','\'+D.DoctrineType,D.DoctrineType) + ' $' + D.COLUMN_NAME
++ CHAR(13)+CHAR(10) + '*/'
++ CHAR(13)+CHAR(10) + 'public function set' + replace(D.COLUMN_NAME,'_','') +  '('+ '$' + D.COLUMN_NAME + ')'
++ CHAR(13)+CHAR(10) + '{'
++ CHAR(13)+CHAR(10) + '	$this->' + D.COLUMN_NAME + '=' + '$' + D.COLUMN_NAME + ';'
++ CHAR(13)+CHAR(10) + '}'
++ CHAR(13)+CHAR(10)
+
+--,D.ORDINAL_POSITION
+FROM D
